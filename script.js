@@ -1,3 +1,6 @@
+// Import API functions
+import { fetchCsvData } from './api.js';
+
 let transactionData = [];
 let currentDatePicker;
 let previousDatePicker;
@@ -21,7 +24,7 @@ let currentEnlargedChart = null;
 
 // Add this function at the top of the file
 function isAuthenticated() {
-    return !!sessionStorage.getItem('isLoggedIn');
+    return !!sessionStorage.getItem('token') && !!sessionStorage.getItem('isLoggedIn');
 }
 
 // Helper function to parse dates
@@ -31,7 +34,7 @@ function parseDate(dateStr) {
     if (!isNaN(date.getTime())) {
         return date;
     }
-    
+
     // If standard parsing fails, try to parse DD/MM/YYYY format
     const parts = dateStr.split(/[\/\-]/);
     if (parts.length === 3) {
@@ -40,14 +43,14 @@ function parseDate(dateStr) {
             new Date(parts[2], parts[1] - 1, parts[0]), // DD/MM/YYYY
             new Date(parts[2], parts[0] - 1, parts[1])  // MM/DD/YYYY
         ];
-        
+
         for (const d of possibleDates) {
             if (!isNaN(d.getTime())) {
                 return d;
             }
         }
     }
-    
+
     throw new Error(`Invalid date format: ${dateStr}`);
 }
 
@@ -63,10 +66,10 @@ function parseCSVLine(line) {
     const result = [];
     let current = '';
     let inQuotes = false;
-    
+
     for (let i = 0; i < line.length; i++) {
         const char = line[i];
-        
+
         if (char === '"') {
             if (inQuotes && line[i + 1] === '"') {
                 // Handle escaped quotes
@@ -82,7 +85,7 @@ function parseCSVLine(line) {
             current += char;
         }
     }
-    
+
     result.push(current.trim());
     return result;
 }
@@ -105,7 +108,7 @@ function extractBusinessName(fullName) {
     return fullName.trim();
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     // Check authentication first
     if (!isAuthenticated()) {
         window.location.href = 'login.html';
@@ -117,7 +120,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('welcomeUser').textContent = `Welcome, ${userDisplayName}`;
 
     // Setup logout functionality
-    document.getElementById('logoutBtn').addEventListener('click', function() {
+    document.getElementById('logoutBtn').addEventListener('click', function () {
         sessionStorage.clear();
         window.location.href = 'login.html';
     });
@@ -127,7 +130,7 @@ document.addEventListener('DOMContentLoaded', function() {
         mode: "range",
         dateFormat: "M j, Y",
         defaultDate: null,
-        onChange: function(selectedDates) {
+        onChange: function (selectedDates) {
             if (selectedDates.length === 2) {
                 currentDateRange = selectedDates;
                 const days = getDaysBetween(selectedDates[0], selectedDates[1]);
@@ -150,7 +153,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 previousEnd.setDate(previousEnd.getDate() - 1); // Day before current start
                 const previousStart = new Date(previousEnd);
                 previousStart.setTime(previousEnd.getTime() - periodLength);
-                
+
                 previousDateRange = [previousStart, previousEnd];
                 const previousDays = getDaysBetween(previousStart, previousEnd);
                 previousDatePicker.setDate([previousStart, previousEnd]);
@@ -166,7 +169,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         year: 'numeric'
                     })} (${previousDays} days)`;
                 }
-                
+
                 filterAndUpdateDashboard();
             }
         }
@@ -178,7 +181,7 @@ document.addEventListener('DOMContentLoaded', function() {
         dateFormat: "M j, Y",
         defaultDate: null,
         clickOpens: false, // Make it read-only
-        onChange: function(selectedDates) {
+        onChange: function (selectedDates) {
             if (selectedDates.length === 2) {
                 previousDateRange = selectedDates;
                 filterAndUpdateDashboard();
@@ -186,16 +189,17 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Set up file input listener
-    document.getElementById('csvFile').addEventListener('change', handleFileSelect);
+    // Set up download CSV button
+    document.getElementById('downloadCsvBtn').addEventListener('click', handleCsvDownload);
 
     // Load pre-built data only after authentication
     if (isAuthenticated()) {
-        loadPrebuiltData();
+        // Instead of loading from a local file, fetch from API
+        loadDataFromApi();
     }
 
     // Set up business filter listener
-    document.getElementById('businessSearch').addEventListener('change', function(e) {
+    document.getElementById('businessSearch').addEventListener('change', function (e) {
         selectedBusiness = e.target.value;
         updateLocationFilter();
         // Reset date ranges when business changes
@@ -205,7 +209,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Set up location filter listener
-    document.getElementById('locationSearch').addEventListener('change', function(e) {
+    document.getElementById('locationSearch').addEventListener('change', function (e) {
         selectedLocation = e.target.value;
         // Reset date ranges when location changes
         currentDateRange = null;
@@ -214,13 +218,13 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Set up returning window listener
-    document.getElementById('returningWindow').addEventListener('change', function(e) {
+    document.getElementById('returningWindow').addEventListener('change', function (e) {
         returningWindow = parseInt(e.target.value);
         filterAndUpdateDashboard();
     });
 
     // Add first time users threshold listener
-    document.getElementById('firstTimeUsersThreshold').addEventListener('change', function(e) {
+    document.getElementById('firstTimeUsersThreshold').addEventListener('change', function (e) {
         firstTimeUsersThreshold = parseInt(e.target.value);
         filterAndUpdateDashboard();
     });
@@ -234,7 +238,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeBusinessSearch();
 
     // Remove the old business search listener
-    document.getElementById('businessSearch').removeEventListener('change', function(e) {
+    document.getElementById('businessSearch').removeEventListener('change', function (e) {
         selectedBusiness = e.target.value;
         updateLocationFilter();
         currentDateRange = null;
@@ -243,7 +247,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Add this after the date picker initialization code
-    document.getElementById('quickDateFilter').addEventListener('change', function(e) {
+    document.getElementById('quickDateFilter').addEventListener('change', function (e) {
         const days = parseInt(e.target.value);
         if (!days) return; // If no value selected, do nothing
 
@@ -276,7 +280,7 @@ function handleFileSelect(event) {
 
     console.log('Processing new file...');
 
-    reader.onload = function(e) {
+    reader.onload = function (e) {
         const text = e.target.result;
         try {
             processData(text);
@@ -299,7 +303,7 @@ function calculateFirstVisitDates(transactions) {
     transactions.forEach(item => {
         const email = item.email;
         const businessName = extractBusinessName(item.merchant);
-        
+
         // Track first visit ever (across all businesses)
         if (!globalUserFirstVisit.has(email)) {
             globalUserFirstVisit.set(email, item.date);
@@ -320,7 +324,7 @@ function calculateFirstVisitDates(transactions) {
 function processData(csvText) {
     const lines = csvText.split('\n');
     const headers = parseCSVLine(lines[0].toLowerCase());
-    
+
     // Map the exact headers from the CSV file
     const columnMappings = {
         email: ['user email'],
@@ -358,15 +362,15 @@ function processData(csvText) {
 
     // Clear existing data
     transactionData = [];
-    
+
     // Process each line
     for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
-        
+
         try {
             const values = parseCSVLine(line);
-            
+
             // Create row data using found column indices
             const rowData = {
                 email: values[columnIndices.email],
@@ -389,16 +393,16 @@ function processData(csvText) {
 
     // Calculate first visit dates
     calculateFirstVisitDates(transactionData);
-    
+
     // Reset filters
     selectedBusiness = 'all';
     selectedLocation = 'all';
-    
+
     // Update filters
     console.log('Updating business filter with', transactionData.length, 'transactions');
     initializeBusinessSearch(); // Reinitialize business search with new data
     updateLocationFilter();
-    
+
     // Log summary data
     console.log(`Processed ${transactionData.length} transactions`);
     if (transactionData.length > 0) {
@@ -426,10 +430,10 @@ function initializeSearchableSelect(searchInput, optionsContainer, options, onSe
     container.appendChild(allOption);
 
     // Add input event listener for search
-    input.addEventListener('input', function(e) {
+    input.addEventListener('input', function (e) {
         const searchTerm = e.target.value.toLowerCase();
         const allOptions = container.querySelectorAll('.option');
-        
+
         allOptions.forEach(option => {
             const text = option.textContent.toLowerCase();
             if (text === 'all businesses' || text.includes(searchTerm)) {
@@ -438,21 +442,21 @@ function initializeSearchableSelect(searchInput, optionsContainer, options, onSe
                 option.style.display = 'none';
             }
         });
-        
+
         container.classList.add('show');
     });
 
     // Show options on input focus
-    input.addEventListener('focus', function() {
+    input.addEventListener('focus', function () {
         container.classList.add('show');
     });
 
     // Handle click on "All" option
-    allOption.addEventListener('click', function() {
+    allOption.addEventListener('click', function () {
         const allOptions = container.querySelectorAll('.option');
         allOptions.forEach(opt => opt.classList.remove('selected'));
         allOption.classList.add('selected');
-        
+
         input.value = '';
         container.classList.remove('show');
         onSelect('all');
@@ -464,12 +468,12 @@ function initializeSearchableSelect(searchInput, optionsContainer, options, onSe
         div.className = 'option';
         div.textContent = option;
         div.dataset.value = option;
-        
+
         div.addEventListener('click', () => {
             const allOptions = container.querySelectorAll('.option');
             allOptions.forEach(opt => opt.classList.remove('selected'));
             div.classList.add('selected');
-            
+
             input.value = option;
             container.classList.remove('show');
             onSelect(option);
@@ -479,7 +483,7 @@ function initializeSearchableSelect(searchInput, optionsContainer, options, onSe
     });
 
     // Close options when clicking outside
-    document.addEventListener('click', function(e) {
+    document.addEventListener('click', function (e) {
         if (!input.contains(e.target) && !container.contains(e.target)) {
             container.classList.remove('show');
         }
@@ -509,10 +513,10 @@ function updateOptions(container, options, onSelect, searchTerm = '') {
         const allOptions = container.querySelectorAll('.option');
         allOptions.forEach(opt => opt.classList.remove('selected'));
         allOption.classList.add('selected');
-        
+
         const input = container.previousElementSibling;
         input.value = '';
-        
+
         container.classList.remove('show');
         onSelect('all');
     });
@@ -522,15 +526,15 @@ function updateOptions(container, options, onSelect, searchTerm = '') {
         div.className = `option ${option === selectedValue ? 'selected' : ''}`;
         div.textContent = option;
         div.dataset.value = option;
-        
+
         div.addEventListener('click', () => {
             const allOptions = container.querySelectorAll('.option');
             allOptions.forEach(opt => opt.classList.remove('selected'));
             div.classList.add('selected');
-            
+
             const input = container.previousElementSibling;
             input.value = option;
-            
+
             container.classList.remove('show');
             onSelect(option);
         });
@@ -541,14 +545,14 @@ function updateOptions(container, options, onSelect, searchTerm = '') {
 
 function updateBusinessFilter() {
     const uniqueBusinesses = new Set();
-    
+
     // Get unique business names without locations
     transactionData.forEach(item => {
         uniqueBusinesses.add(extractBusinessName(item.merchant));
     });
-    
+
     const businesses = [...uniqueBusinesses].sort();
-    
+
     // Initialize searchable select for businesses
     initializeSearchableSelect(
         'businessSearch',
@@ -567,7 +571,7 @@ function updateBusinessFilter() {
 
 function updateLocationFilter() {
     const locations = new Set();
-    
+
     // Get locations based on selected business
     transactionData.forEach(item => {
         const businessName = extractBusinessName(item.merchant);
@@ -575,9 +579,9 @@ function updateLocationFilter() {
             locations.add(extractLocation(item.merchant));
         }
     });
-    
+
     const sortedLocations = [...locations].sort();
-    
+
     // Initialize searchable select for locations
     initializeSearchableSelect(
         'locationSearch',
@@ -603,7 +607,7 @@ function formatDateForDisplay(startDate, endDate) {
             day: 'numeric'
         });
     };
-    
+
     const days = getDaysBetween(startDate, endDate);
     return `${formatDate(startDate)} - ${formatDate(endDate)} (${days} days)`;
 }
@@ -650,21 +654,21 @@ function filterAndUpdateDashboard() {
         const sortedData = [...filteredData].sort((a, b) => a.date - b.date);
         const firstTransactionDate = new Date(sortedData[0].date);
         const lastTransactionDate = new Date(sortedData[sortedData.length - 1].date);
-        
+
         // Set current period to last 30 days of data
         const currentEnd = lastTransactionDate;
         const currentStart = new Date(currentEnd);
         currentStart.setDate(currentStart.getDate() - 29);
-        
+
         currentDateRange = [currentStart, currentEnd];
         currentDatePicker.setDate([currentStart, currentEnd]);
-        
+
         // Set previous period
         const previousEnd = new Date(currentStart);
         previousEnd.setDate(previousEnd.getDate() - 1);
         const previousStart = new Date(previousEnd);
         previousStart.setDate(previousStart.getDate() - 29);
-        
+
         previousDateRange = [previousStart, previousEnd];
         previousDatePicker.setDate([previousStart, previousEnd]);
     }
@@ -686,10 +690,10 @@ function formatGrowth(growth) {
 function updateComparisonDisplay(elementId, growth) {
     const element = document.getElementById(elementId);
     element.textContent = formatGrowth(growth);
-    
+
     // Remove existing classes
     element.classList.remove('positive', 'negative', 'neutral');
-    
+
     // Add appropriate class based on growth
     if (growth > 0) {
         element.classList.add('positive');
@@ -819,8 +823,8 @@ function initReturningUsersChart(data) {
         data: {
             labels: data.labels,
             datasets: [{
-                label: returningWindow === 0 ? 
-                    'Visitas Múltiples (Mes Actual)' : 
+                label: returningWindow === 0 ?
+                    'Visitas Múltiples (Mes Actual)' :
                     `Usuarios Recurrentes (${returningWindow} ${returningWindow > 1 ? 'Meses' : 'Mes'} Anterior${returningWindow > 1 ? 'es' : ''}`,
                 data: returningData,
                 backgroundColor: 'rgba(107, 100, 219, 0.7)',
@@ -843,8 +847,8 @@ function initReturningUsersChart(data) {
             plugins: {
                 title: {
                     display: true,
-                    text: returningWindow === 0 ? 
-                        'Usuarios con Visitas Múltiples en el Mismo Mes' : 
+                    text: returningWindow === 0 ?
+                        'Usuarios con Visitas Múltiples en el Mismo Mes' :
                         `Usuarios Recurrentes de ${returningWindow} ${returningWindow > 1 ? 'Meses' : 'Mes'} Anterior${returningWindow > 1 ? 'es' : ''}`,
                     font: { size: 16, weight: 'bold' },
                     padding: { bottom: 30, top: 10 }
@@ -889,7 +893,7 @@ function initReturningUsersPercentageChart(data) {
     }
 
     const returningData = returningWindow === 0 ? data.returningUsers : data.lastMonthReturningUsers;
-    const percentages = data.labels.map((_, index) => 
+    const percentages = data.labels.map((_, index) =>
         (returningData[index] / data.uniqueUsers[index] * 100) || 0
     );
 
@@ -898,8 +902,8 @@ function initReturningUsersPercentageChart(data) {
         data: {
             labels: data.labels,
             datasets: [{
-                label: returningWindow === 0 ? 
-                    'Visitas Múltiples % (Mes Actual)' : 
+                label: returningWindow === 0 ?
+                    'Visitas Múltiples % (Mes Actual)' :
                     `Usuarios Recurrentes % (${returningWindow} ${returningWindow > 1 ? 'Meses' : 'Mes'} Anterior${returningWindow > 1 ? 'es' : ''}`,
                 data: percentages,
                 backgroundColor: 'rgba(107, 100, 219, 0.7)',
@@ -922,8 +926,8 @@ function initReturningUsersPercentageChart(data) {
             plugins: {
                 title: {
                     display: true,
-                    text: returningWindow === 0 ? 
-                        'Porcentaje de Usuarios con Visitas Múltiples' : 
+                    text: returningWindow === 0 ?
+                        'Porcentaje de Usuarios con Visitas Múltiples' :
                         `Porcentaje de Usuarios Recurrentes (${returningWindow} ${returningWindow > 1 ? 'Meses' : 'Mes'} Anterior${returningWindow > 1 ? 'es' : ''}`,
                     font: { size: 16, weight: 'bold' },
                     padding: { bottom: 30, top: 10 }
@@ -1012,7 +1016,7 @@ function initTotalAmountChart(data) {
                     anchor: 'end',
                     align: 'top',
                     offset: 5,
-                    formatter: function(value) {
+                    formatter: function (value) {
                         return new Intl.NumberFormat('en-US', {
                             style: 'currency',
                             currency: 'USD',
@@ -1036,7 +1040,7 @@ function initTotalAmountChart(data) {
                         padding: { top: 10, bottom: 10 }
                     },
                     ticks: {
-                        callback: function(value) {
+                        callback: function (value) {
                             return new Intl.NumberFormat('en-US', {
                                 style: 'currency',
                                 currency: 'USD',
@@ -1222,10 +1226,10 @@ function updateCharts(data) {
                 visits: {}
             };
         }
-        
+
         monthlyData[monthYear].users.add(item.email);
         monthlyData[monthYear].amount += item.amount;
-        
+
         // Track visits per user
         if (!monthlyData[monthYear].visits[item.email]) {
             monthlyData[monthYear].visits[item.email] = new Set();
@@ -1249,7 +1253,7 @@ function updateCharts(data) {
             // Get user's first visit to the selected business
             const userBusinessKey = `${email}-${selectedBusiness}`;
             const businessFirstVisit = globalUserBusinessFirstVisit.get(userBusinessKey);
-            
+
             // Skip if user never visited this business or first visit wasn't in this month
             if (!businessFirstVisit || formatYearMonth(businessFirstVisit) !== month) {
                 return;
@@ -1257,7 +1261,7 @@ function updateCharts(data) {
 
             // Get user's first ever visit
             const userFirstEverVisit = globalUserFirstVisit.get(email);
-            
+
             // Calculate days between first ever visit and first business visit
             const daysDiff = (businessFirstVisit.getTime() - userFirstEverVisit.getTime()) / (1000 * 60 * 60 * 24);
 
@@ -1273,7 +1277,7 @@ function updateCharts(data) {
                 .filter(([_, dates]) => dates.size > 1)
                 .map(([email]) => email)
         );
-        
+
         // Calculate users returning from previous months based on window
         if (month && returningWindow > 0) {
             const previousMonthsUsers = new Set();
@@ -1312,7 +1316,7 @@ function updateCharts(data) {
 function updateDashboard(data) {
     // Ensure data is an array
     const safeData = Array.isArray(data) ? data : [];
-    
+
     // Apply date range filtering
     let filteredData = safeData;
     if (currentDateRange && currentDateRange.length === 2) {
@@ -1464,18 +1468,18 @@ function formatCurrency(amount) {
 function initializeModalHandlers() {
     const modal = document.getElementById('chartModal');
     const closeBtn = document.querySelector('.close-modal');
-    
+
     // Close modal when clicking the close button
-    closeBtn.onclick = function() {
+    closeBtn.onclick = function () {
         modal.style.display = "none";
         if (modalChart) {
             modalChart.destroy();
             modalChart = null;
         }
     }
-    
+
     // Close modal when clicking outside the modal content
-    window.onclick = function(event) {
+    window.onclick = function (event) {
         if (event.target === modal) {
             modal.style.display = "none";
             if (modalChart) {
@@ -1487,7 +1491,7 @@ function initializeModalHandlers() {
 
     // Add click handlers to all chart containers
     document.querySelectorAll('.metrics-chart').forEach(chartContainer => {
-        chartContainer.onclick = function() {
+        chartContainer.onclick = function () {
             const canvasId = chartContainer.querySelector('canvas').id;
             enlargeChart(canvasId);
         };
@@ -1496,28 +1500,28 @@ function initializeModalHandlers() {
 
 function enlargeChart(sourceChartId) {
     console.log('Enlarging chart:', sourceChartId);
-    
+
     const modal = document.getElementById('chartModal');
     const modalCanvas = document.getElementById('modalChart');
     const sourceChart = Chart.getChart(sourceChartId);
-    
+
     if (!sourceChart) {
         console.error('Source chart not found');
         return;
     }
-    
+
     console.log('Source chart data:', sourceChart.data);
     console.log('Source chart options:', sourceChart.options);
-    
+
     // Destroy previous modal chart if it exists
     if (modalChart) {
         console.log('Destroying previous modal chart');
         modalChart.destroy();
     }
-    
+
     // Show the modal
     modal.style.display = "block";
-    
+
     // Clone the source chart configuration and data
     const newConfig = {
         type: sourceChart.config.type,
@@ -1594,9 +1598,9 @@ function enlargeChart(sourceChartId) {
         },
         plugins: [ChartDataLabels]
     };
-    
+
     console.log('New chart config:', newConfig);
-    
+
     // Create the new chart
     modalChart = new Chart(modalCanvas, newConfig);
     console.log('Modal chart created:', modalChart);
@@ -1608,20 +1612,20 @@ function initializeMobileHandlers() {
     let pullEndY = 0;
     const dashboard = document.querySelector('.dashboard');
 
-    document.addEventListener('touchstart', function(e) {
+    document.addEventListener('touchstart', function (e) {
         pullStartY = e.touches[0].clientY;
     }, { passive: true });
 
-    document.addEventListener('touchmove', function(e) {
+    document.addEventListener('touchmove', function (e) {
         pullEndY = e.touches[0].clientY;
-        
+
         // If pulled down at the top of the page
         if (window.scrollY === 0 && pullEndY > pullStartY) {
             dashboard.classList.add('refreshing');
         }
     }, { passive: true });
 
-    document.addEventListener('touchend', function() {
+    document.addEventListener('touchend', function () {
         if (window.scrollY === 0 && pullEndY > pullStartY + 100) {
             // Refresh dashboard data
             filterAndUpdateDashboard();
@@ -1651,22 +1655,22 @@ function initializeMobileHandlers() {
         };
 
         // Apply touch-optimized options to all charts
-        [uniqueUsersChart, returningUsersChart, returningUsersPercentageChart, 
-         totalAmountChart, avgVisitsChart, firstTimeUsersChart].forEach(chart => {
-            if (chart) {
-                Object.assign(chart.options, chartOptions);
-                chart.update();
-            }
-        });
+        [uniqueUsersChart, returningUsersChart, returningUsersPercentageChart,
+            totalAmountChart, avgVisitsChart, firstTimeUsersChart].forEach(chart => {
+                if (chart) {
+                    Object.assign(chart.options, chartOptions);
+                    chart.update();
+                }
+            });
     }
 
     // Add double-tap to zoom for charts
     let lastTap = 0;
     document.querySelectorAll('.metrics-chart').forEach(chart => {
-        chart.addEventListener('touchend', function(e) {
+        chart.addEventListener('touchend', function (e) {
             const currentTime = new Date().getTime();
             const tapLength = currentTime - lastTap;
-            
+
             if (tapLength < 500 && tapLength > 0) {
                 // Double tap detected
                 e.preventDefault();
@@ -1682,12 +1686,12 @@ function initializeMobileHandlers() {
     let modalTouchStartX = 0;
     let modalTouchStartY = 0;
 
-    modal.addEventListener('touchstart', function(e) {
+    modal.addEventListener('touchstart', function (e) {
         modalTouchStartX = e.touches[0].clientX;
         modalTouchStartY = e.touches[0].clientY;
     }, { passive: true });
 
-    modal.addEventListener('touchmove', function(e) {
+    modal.addEventListener('touchmove', function (e) {
         if (!modal.style.display === 'block') return;
 
         const touchEndX = e.touches[0].clientX;
@@ -1710,28 +1714,28 @@ function initializeBusinessSearch() {
     const searchInput = document.getElementById('businessSearch');
     const optionsContainer = document.getElementById('businessOptions');
     let businesses = new Set();
-    
+
     // Get unique businesses from transaction data
     transactionData.forEach(item => {
         const businessName = extractBusinessName(item.merchant);
         businesses.add(businessName);
     });
-    
+
     // Convert to sorted array
     const sortedBusinesses = Array.from(businesses).sort();
-    
+
     // Function to filter businesses
     function filterBusinesses(searchTerm) {
         console.log('Filtering businesses with term:', searchTerm);
         console.log('Available businesses:', sortedBusinesses);
-        
+
         const normalizedTerm = searchTerm.toLowerCase();
-        const filteredBusinesses = sortedBusinesses.filter(business => 
+        const filteredBusinesses = sortedBusinesses.filter(business =>
             business.toLowerCase().includes(normalizedTerm)
         );
-        
+
         console.log('Filtered businesses:', filteredBusinesses);
-        
+
         // Update options container
         optionsContainer.innerHTML = '';
 
@@ -1742,7 +1746,7 @@ function initializeBusinessSearch() {
         allOption.textContent = 'All Businesses';
         allOption.addEventListener('click', () => selectBusiness('all'));
         optionsContainer.appendChild(allOption);
-        
+
         if (filteredBusinesses.length > 0) {
             filteredBusinesses.forEach(business => {
                 const option = document.createElement('div');
@@ -1758,43 +1762,43 @@ function initializeBusinessSearch() {
             noResults.textContent = 'No matching businesses found';
             optionsContainer.appendChild(noResults);
         }
-        
+
         optionsContainer.classList.add('show');
     }
-    
+
     // Function to handle business selection
     function selectBusiness(business) {
         console.log('Selecting business:', business);
         selectedBusiness = business;
         searchInput.value = business === 'all' ? '' : business;
         optionsContainer.classList.remove('show');
-        
+
         // Update UI
         document.querySelectorAll('#businessOptions .option').forEach(opt => {
             opt.classList.toggle('selected', opt.dataset.value === business);
         });
-        
+
         // Update location filter and refresh dashboard
         updateLocationFilter();
         filterAndUpdateDashboard();
     }
-    
+
     // Add event listeners
     searchInput.addEventListener('input', (e) => {
         filterBusinesses(e.target.value);
     });
-    
+
     searchInput.addEventListener('focus', () => {
         filterBusinesses(searchInput.value);
     });
-    
+
     // Close options when clicking outside
     document.addEventListener('click', (e) => {
         if (!searchInput.contains(e.target) && !optionsContainer.contains(e.target)) {
             optionsContainer.classList.remove('show');
         }
     });
-    
+
     // Initialize with empty search
     filterBusinesses('');
 }
@@ -1841,4 +1845,57 @@ function maskBusinessName(name) {
         return `${'*'.repeat(Math.max(business.length - 4, 4))}-${location.trim()}`;
     }
     return '*'.repeat(Math.max(name.length - 4, 4));
-} 
+}
+
+/**
+ * Function to handle downloading CSV data from the API
+ */
+async function handleCsvDownload() {
+    try {
+        // Show loader or button loading state
+        const downloadBtn = document.getElementById('downloadCsvBtn');
+        const originalText = downloadBtn.textContent;
+        downloadBtn.textContent = 'Descargando...';
+        downloadBtn.disabled = true;
+
+        // Fetch CSV data from API
+        const csvData = await fetchCsvData();
+
+        // Process the CSV data
+        processData(csvData);
+        filterAndUpdateDashboard();
+
+        // Restore button state
+        downloadBtn.textContent = originalText;
+        downloadBtn.disabled = false;
+
+    } catch (error) {
+        console.error('Error downloading CSV data:', error);
+        alert(`Error descargando datos: ${error.message}`);
+
+        // Restore button state on error
+        const downloadBtn = document.getElementById('downloadCsvBtn');
+        downloadBtn.textContent = 'Descargar datos CSV';
+        downloadBtn.disabled = false;
+    }
+}
+
+/**
+ * Function to load data from API on page load
+ */
+async function loadDataFromApi() {
+    try {
+        console.log('Loading data from API...');
+
+        // Fetch CSV data from API
+        const csvData = await fetchCsvData();
+
+        // Process the CSV data
+        processData(csvData);
+        filterAndUpdateDashboard();
+
+        console.log('Data loaded successfully from API');
+    } catch (error) {
+        console.error('Error loading data from API:', error);
+    }
+}

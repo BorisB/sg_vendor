@@ -34,6 +34,36 @@ async function login(username, password) {
 }
 
 /**
+ * Fetch CSV data from the API
+ * @returns {Promise<string>} - Promise containing CSV data
+ */
+async function fetchCsvData() {
+    try {
+        const token = sessionStorage.getItem('token');
+
+        if (!token) {
+            throw new Error('No authentication token found');
+        }
+
+        const response = await fetch(`${API_URL}/tools/analytics/csv`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch CSV data');
+        }
+
+        return await response.text();
+    } catch (error) {
+        throw error;
+    }
+}
+
+/**
  * Check if the user is authenticated
  * @returns {boolean} - True if user is logged in
  */
@@ -44,4 +74,4 @@ function checkAuthentication() {
     return true;
 }
 
-export { login, checkAuthentication };
+export { login, fetchCsvData, checkAuthentication };

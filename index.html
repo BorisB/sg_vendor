@@ -16,8 +16,7 @@
             <div class="header-title">
                 <h1>Panel de Análisis de Transacciones</h1>
                 <div class="file-upload">
-                    <input type="file" id="csvFile" accept=".csv">
-                    <label for="csvFile">Seleccionar archivo CSV</label>
+                    <button id="downloadCsvBtn" class="download-btn">Descargar datos CSV</button>
                 </div>
                 <div class="user-controls">
                     <span id="welcomeUser" class="welcome-text"></span>
@@ -338,7 +337,7 @@
             window.location.href = 'login.html';
         }
     </script>
-    <script src="script.js"></script>
+    <script type="module" src="script.js"></script>
     <script>
         // Configurar funcionalidad de cierre de sesión
         const userDisplayName = sessionStorage.getItem('userDisplayName') || 'Usuario';
@@ -349,4 +348,4 @@
         });
     </script>
 </body>
-</html> 
+</html>

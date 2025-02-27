@@ -965,4 +965,29 @@ html {
     color: #2d3436;
     font-size: 1.5rem;
     font-weight: 500;
-} 
+}
+
+/* Download CSV button styles */
+.download-btn {
+    background-color: #6B64DB;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 14px;
+    font-weight: 500;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.download-btn:hover {
+    background-color: #5952c4;
+    transform: translateY(-1px);
+}
+
+.download-btn:active {
+    transform: translateY(0);
+}
