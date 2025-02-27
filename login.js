@@ -1,20 +1,5 @@
-// Simple login validation
-function validateLogin(username, password) {
-    // Define valid credentials
-    const validCredentials = {
-        'Jose': 'Jose.3985980',
-        'Laura': '6qSMr8w7hTZSn13'
-    };
-
-    // Check if username exists and password matches
-    if (validCredentials.hasOwnProperty(username) && validCredentials[username] === password) {
-        // Store login state and display name in session
-        sessionStorage.setItem('isLoggedIn', 'true');
-        sessionStorage.setItem('userDisplayName', username);
-        return true;
-    }
-    return false;
-}
+// Import API functions using ES modules
+import { login } from './api.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     const loginForm = document.getElementById('loginForm');
@@ -43,13 +28,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        
+
         const username = document.getElementById('username').value.trim();
         const password = document.getElementById('password').value.trim();
-        
+
         // Clear previous error
         loginError.textContent = '';
-        
+
         // Basic validation
         if (!username || !password) {
             loginError.textContent = 'Por favor ingrese usuario y contraseña';
@@ -58,21 +43,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             showLoader();
-            
-            // Simulate network delay for smoother UX
-            await new Promise(resolve => setTimeout(resolve, 800));
-            
-            if (validateLogin(username, password)) {
+
+            // Call API login function
+            const response = await login(username, password);
+
+            if (response && response.token) {
+                // Store token in session storage
+                sessionStorage.setItem('token', response.token);
+                sessionStorage.setItem('isLoggedIn', 'true');
+
+                // Extract username from token if needed for display
+                // Could also store username separately if needed
+                sessionStorage.setItem('userDisplayName', username);
+
                 // Clear sensitive data
                 document.getElementById('password').value = '';
-                
+
                 // Redirect to dashboard
                 window.location.href = 'index.html';
             } else {
-                throw new Error('Usuario o contraseña inválidos');
+                throw new Error('Error de autenticación');
             }
         } catch (error) {
-            loginError.textContent = error.message;
+            loginError.textContent = error.message || 'Usuario o contraseña inválidos';
             hideLoader();
         }
     });
@@ -84,4 +77,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Clear password field when page loads
     document.getElementById('password').value = '';
-}); 
+});
