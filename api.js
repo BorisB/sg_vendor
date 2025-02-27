@@ -50,7 +50,8 @@ async function fetchCsvData() {
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
-            }
+            },
+            redirect: 'follow'
         });
 
         if (!response.ok) {
