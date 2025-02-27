@@ -3,7 +3,7 @@
  */
 
 // API base URL 
-const API_URL = 'http://localhost:8010';
+const API_URL = 'https://ofertasimple.com';
 
 /**
  * Login function to authenticate user with the API
